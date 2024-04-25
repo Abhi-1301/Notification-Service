@@ -1,0 +1,154 @@
+version: "3.7"
+
+services:
+  web:
+    build: .
+    networks:
+      - notification-net
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "7000:7000"
+    expose:
+      - "7000"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql_DB:3306/notification_service
+      MYSQL_HOST: mysql_DB
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+      MYSQL_PORT: 3306
+      ELASTICSEARCH_HOST: elasticsearch
+      ELASTICSEARCH_PORT: 9200
+      SPRING_OUTPUT_ANSI_ENABLED: ALWAYS
+      SPRING_JPA_HIBERNATE_DDL-AUTO: update
+      SPRING_JPA_GENERATE-DDL: "true"
+      SPRING_DATA_ELASTICSEARCH_CLUSTER-NODES: http://elasticsearch:9200
+
+  mysqldb:
+    image: mysql
+    restart: always
+    networks:
+      - notification-net
+    volumes:
+      - mysql_data:/var/lib/mysql
+    container_name: mysql_DB
+    environment:
+      MYSQL_DATABASE: notification_service
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+      MYSQL_ROOT_PASSWORD: password
+    ports:
+      - "3306:3306"
+    expose:
+      - 3306
+
+  redis:
+    container_name: redis
+    image: redis:latest
+    restart: always
+    networks:
+      - notification-net
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 1s
+      timeout: 2s
+      retries: 20
+    environment:
+      ALLOW_EMPTY_PASSWORD: "yes"
+      REDIS_DISABLE_COMMANDS: FLUSH,FLUSH-ALL
+    expose:
+      - 6379
+
+  elasticsearch:
+    container_name: elasticsearch
+    image: elasticsearch:8.11.2
+    restart: always
+    networks:
+      - notification-net
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    environment:
+      xpack.security.enabled: "false"
+      xpack.security.transport.ssl.enabled: "false"
+      xpack.security.http.ssl.enabled: "false"
+      transport.host: "localhost"
+      http.port: "9200"
+      bootstrap.memory_lock: "true"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://elasticsearch:9200/_cluster/health" ]
+      interval: 1s
+      timeout: 2s
+      retries: 20
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    expose:
+      - 9200
+      - 9300
+
+  zookeeper:
+    container_name: zookeeper
+    image: confluentinc/cp-zookeeper:latest
+    networks:
+      - notification-net
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: "2181"
+      ZOOKEEPER_TICK_TIME: "2000"
+    expose:
+      - 2181
+    healthcheck:
+      test: [ "CMD", "echo", "ruok", "|", "nc", "localhost", "2181" ]
+      interval: 1s
+      timeout: 2s
+      retries: 20
+
+  kafka:
+    container_name: kafka
+    image: confluentinc/cp-kafka:latest
+    restart: always
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: "1"
+      KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    networks:
+      - notification-net
+    expose:
+      - 29092
+    healthcheck:
+      test: [ "CMD", "nc", "-z", "kafka", "9092" ]
+      interval: 1s
+      timeout: 2s
+      retries: 20
+
+volumes:
+  elasticsearch_data:
+    driver: local
+  redis_data:
+    driver: local
+  mysql_data:
+    driver: local
+
+networks:
+  notification-net:
+    external: true
+    driver: bridge

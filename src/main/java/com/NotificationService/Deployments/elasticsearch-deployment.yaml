@@ -1,0 +1,77 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: elasticsearch
+  labels:
+    app: elasticsearch
+spec:
+  ports:
+    - name: elasticsearch
+      port: 9200
+      targetPort: 9200
+  selector:
+    app: elasticsearch
+
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: elasticsearch-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: elasticsearch
+  labels:
+    name: elasticsearch
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: elasticsearch
+  template:
+    metadata:
+      labels:
+        app: elasticsearch
+    spec:
+      containers:
+        - name: elasticsearch
+          image: elasticsearch:8.11.2
+          ports:
+            - containerPort: 9200
+              name: elasticsearch
+          env:
+            - name: discovery.type
+              value: "single-node"
+            - name: cluster.name
+              value: "my-cluster"
+            - name: xpack.security.enabled
+              value: "false"
+            - name: xpack.security.transport.ssl.enabled
+              value: "false"
+            - name: xpack.security.http.ssl.enabled
+              value: "false"
+            - name: ES_JAVA_OPTS
+              value: "-Xms750m -Xmx750m"
+            - name: http.port
+              value: "9200"
+            - name: CLUSTER_NODES
+              value: elasticsearch:9200
+            - name: CLUSTER_HOST
+              value: elasticsearch
+          volumeMounts:
+            - name: elasticsearch-storage
+              mountPath: /usr/share/elasticsearch/data
+      volumes:
+        - name: elasticsearch-storage
+          persistentVolumeClaim:
+            claimName: elasticsearch-pvc
